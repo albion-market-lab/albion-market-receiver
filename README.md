@@ -26,7 +26,7 @@ Sebelum membangun parser atau schema final:
 Jangan menganggap dukungan Mac M1 atau format event AODP sudah terbukti sebelum PoC.
 
 ## Penyimpanan harga: Google Sheets
-Usulan tabel terstruktur `MarketPrices` (schema final disesuaikan sesudah PoC). **Satu baris per** `(server, item_id, city, quality)`.
+Tabel terstruktur **`Market Prices`** sudah dibuat (schema akan divalidasi ulang sesudah PoC). **Satu baris per** `(server, item_id, city, quality)`.
 
 | Kolom | Makna |
 | --- | --- |
@@ -47,7 +47,7 @@ Usulan tabel terstruktur `MarketPrices` (schema final disesuaikan sesudah PoC). 
 - `item_id` tidak dibatasi Ore/Hide/Fiber; Wood, Stone, refined item, artifact, dan item lain dapat ditambahkan saat teramati.
 - Google Sheets menyimpan **snapshot harga terbaru** per kunci, bukan menambah baris sejarah tanpa batas pada setiap event.
 - Lima Royal City menjadi pilihan pembelian pada calculator; receiver boleh mencatat kota lain apabila event valid.
-- Spreadsheet yang lama memiliki tab `Harga T4-T8`, `Catatan BO`, dan `Status API`. Migrasi skema harus dirancang **tanpa menghapus data atau formula lama secara diam-diam**; hentikan sinkronisasi komunitas lama sebelum beralih ke mode private-only.
+- Workbook master yang baru ini terpisah dari spreadsheet BO lama. Jangan mencampurkan atau memigrasikan data komunitas lama ke workbook ini.
 
 ## API dan keamanan
 - Endpoint **ingest** hanya menerima event dari collector yang diizinkan (autentikasi/token + validasi payload).
@@ -64,6 +64,28 @@ Pilihan implementasi (Apps Script / Cloudflare Worker + akses Sheets) diputuskan
 - Observasi lama/duplikat tidak merusak snapshot terbaru.
 - Website dapat membaca harga beserta timestamp; harga yang belum pernah discan tetap kosong.
 - Tidak ada pemanggilan AODP Community API atau kontribusi ke komunitas.
+
+## Workbook tujuan yang sudah dibuat (28 Oktober 2026)
+
+Google Sheets proyek sekarang memiliki tab **`README`**, **`Items`**, **`Craft Recipes`**, **`Refining Recipes`**, dan **`Market Prices`**. Master item dan resep telah disiapkan; **belum ada satu pun harga market yang dimasukkan**. Workbook ini terpisah dari spreadsheet BO lama yang pernah digunakan.
+
+**Kontrak tab `Market Prices` (header aktual; row 1):**
+
+```text
+server | item_id | city | quality | highest_buy_price | highest_buy_observed_at |
+lowest_sell_price | lowest_sell_observed_at | last_ingested_at | source
+```
+
+- Upsert berdasarkan `(server, item_id, city, quality)`, khususnya server **East/Asia**.
+- `highest_buy_observed_at` dan `lowest_sell_observed_at` independen; data lebih tua tidak menimpa data lebih baru.
+- `source` harus menyatakan pengamatan **local collector**. Jangan melakukan fallback ke API komunitas.
+- Harga dan timestamp yang belum ada tetap **kosong/null**, jangan diisi angka nol atau data dummy.
+- Sheet akses ditangani dengan secret konfigurasi, **bukan URL publik/ID spreadsheet yang di-hardcode dalam repo**.
+- Sinkronisasi data komunitas pada workbook lama tidak boleh disambungkan ke target baru ini.
+
+Skema receiver final dan metode ingest menunggu **PoC packet collector Mac M1** agar sesuai format event yang nyata.
+
+**Sumber harga tetap private-only:** tidak mengambil harga dari API komunitas dan tidak mengunggah hasil scan pribadi ke komunitas. Sheet harga masih kosong hingga receiver diimplementasikan.
 
 ## Ekosistem repositori
 
