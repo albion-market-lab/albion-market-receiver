@@ -4,7 +4,7 @@ Status: **PASS** for Task 07. Real BUY and SELL market events were received loca
 
 ## Verified local collector
 
-- Path: `/Users/alpardfm/Documents/market-albion-lab/albiondata-client/albiondata-client-executable`
+- Expected workspace path: `$HOME/Documents/market-albion-lab/albiondata-client/albiondata-client-executable` (adjust `WORKSPACE` below if the workspace is elsewhere).
 - Placement: alongside this repository; it is not copied into or tracked by the receiver.
 - Embedded version: `0.1.61`.
 - Architecture: Mach-O `x86_64`; the host is `arm64` and Rosetta 2 is installed, so macOS runs this release through Rosetta.
@@ -23,38 +23,54 @@ Do not add `-d`: it disables all uploads, including localhost. The client also c
 ## Build and start the listener
 
 ```bash
-cd /Users/alpardfm/Documents/market-albion-lab/albion-market-receiver
+WORKSPACE="${WORKSPACE:-$HOME/Documents/market-albion-lab}"
+cd "$WORKSPACE/albion-market-receiver"
 corepack pnpm install --frozen-lockfile
 corepack pnpm build
 corepack pnpm start:poc
 ```
 
-The listener binds only to `127.0.0.1:8787`, accepts only `POST /marketorders.ingest` JSON, caps bodies at 1 MiB, and stores at most three raw local samples under ignored `var/collector-events/`. Stop it with `Ctrl-C`.
+The listener binds only to `127.0.0.1:8787`, accepts only `POST /marketorders.ingest` JSON, caps bodies at 1 MiB, and stores at most three raw local samples per process under ignored `var/collector-events/`. Sample names combine receipt time with a random UUID, existing files are never overwritten or deleted, and valid events still receive HTTP 200 after the per-session sample limit. Stop it with `Ctrl-C`.
 
 ## Start the collector only after the listener is ready
 
 Open a second Terminal:
 
 ```bash
-cd /Users/alpardfm/Documents/market-albion-lab/albiondata-client
+WORKSPACE="${WORKSPACE:-$HOME/Documents/market-albion-lab}"
+cd "$WORKSPACE/albiondata-client"
 sudo ./albiondata-client-executable -i http://127.0.0.1:8787 -p ""
 ```
 
-Do not use the bundled `run.command`. In a third Terminal, record the collector PID and inspect its active network connections while scanning:
-
-```bash
-pgrep -x albiondata-client-executable
-sudo lsof -nP -a -p COLLECTOR_PID -i
-```
-
-The expected ingest connection is loopback `127.0.0.1:8787`. A GitHub connection may be the updater; any AODP/community connection carrying market ingest fails the private-only requirement. Save the command output for the PoC evidence, but do not commit logs containing unrelated addresses.
-
-Because the collector runs through `sudo`, inspect it from another Terminal with `sudo` too:
+Do not use the bundled `run.command`. Because the collector runs through `sudo`, inspect it from a third Terminal with `sudo` too:
 
 ```bash
 COLLECTOR_PID="$(pgrep -f '^./albiondata-client-executable ' | head -1)"
 sudo lsof -nP -a -p "$COLLECTOR_PID" -i
 ```
+
+The expected ingest connection is loopback `127.0.0.1:8787`. A GitHub connection may be the updater; any AODP/community connection carrying market ingest fails the private-only requirement. Save the command output for the PoC evidence, but do not commit logs containing unrelated addresses.
+
+`lsof` is a point-in-time socket view: it can miss short-lived connections between samples and does not reveal HTTP request bodies. Repeat it in a loop while actively browsing the market, and correlate it with the collector log plus the verified `-i`/`-p` source behavior. A stronger future audit can use a process-aware firewall or packet capture, but raw packet captures must remain local and must not be committed.
+
+Every reproduction needs host access and manual gameplay. **MANUAL VERIFICATION REQUIRED:** confirm the listener is already running, browse an actual market item, observe a local receipt, and inspect outbound connections during that same activity. Unit tests cannot prove packet capture or absence of external traffic.
+
+## Store evidence locally
+
+Keep evidence in the repository's ignored `var/` directory with owner-only permissions:
+
+```bash
+cd "$WORKSPACE/albion-market-receiver"
+umask 077
+mkdir -p var/poc-evidence
+while true; do
+  date -u
+  sudo lsof -nP -a -p "$COLLECTOR_PID" -i
+  sleep 1
+done | tee var/poc-evidence/collector-sockets.txt
+```
+
+Stop the loop with `Ctrl-C`. Collector logs can contain character names or IDs; keep original logs and raw payloads local, redact them before sharing, and never add `var/`, packet captures, credentials, or raw collector logs to Git.
 
 ## Human live-test checklist
 
@@ -73,7 +89,7 @@ Do not commit the raw files. A sanitized `test/fixtures/collector-event*.json` m
 
 The Mac M1/Rosetta collector sent 11 real market-order batches to the listener. The listener recorded receipt times and retained the first three batches: one 50-order BUY batch followed by two 50-order SELL batches. Collector logs explicitly reported successful sends to `http://127.0.0.1:8787`; 404 responses were for unsupported non-market topics such as festivities and market history, which are intentionally outside this PoC endpoint.
 
-A second live scan produced ten more received batches. During that scan, repeated process-level `lsof` samples showed exactly two established collector sockets, both from local ephemeral ports to `127.0.0.1:8787`. No external or AODP/community socket appeared. Together with the verified `-i`/`-p` dispatcher behavior, this confirms that market payloads were routed only to the local listener in this PoC.
+A second live scan produced ten more received batches. During that scan, repeated process-level `lsof` samples showed exactly two established collector sockets, both from local ephemeral ports to `127.0.0.1:8787`; no external or AODP/community socket appeared in those samples. Together with the verified `-i`/`-p` dispatcher behavior and collector logs naming the localhost destination, this is the available private-routing evidence for the PoC. The sampling limitation above still applies.
 
 Two one-order fixtures were extracted from those batches and sanitized by removing order IDs and redundant group IDs:
 

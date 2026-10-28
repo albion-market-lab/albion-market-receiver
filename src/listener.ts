@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -57,9 +58,10 @@ export function createCollectorListener({ outputDirectory, now = () => new Date(
 
       const receivedAt = now().toISOString();
       if (sampleCount < MAX_SAMPLES) {
-        await mkdir(outputDirectory, { recursive: true });
         sampleCount += 1;
-        await writeFile(join(outputDirectory, `collector-event-${String(sampleCount).padStart(2, "0")}.json`), `${JSON.stringify({ receivedAt, payload }, null, 2)}\n`, { flag: "wx" });
+        await mkdir(outputDirectory, { recursive: true });
+        const timestamp = receivedAt.replace(/\D/g, "");
+        await writeFile(join(outputDirectory, `collector-event-${timestamp}-${randomUUID()}.json`), `${JSON.stringify({ receivedAt, payload }, null, 2)}\n`, { flag: "wx" });
       }
 
       console.log(`Received market event at ${receivedAt}: ${payload.Orders.length} orders`);
