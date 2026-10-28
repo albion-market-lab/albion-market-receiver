@@ -9,7 +9,7 @@ Menerima event market dari collector yang berjalan secara lokal saat pemain memb
 
 ```text
 Albion Online (market dibuka manual)
-    -> collector lokal (Mac M1; kompatibilitas perlu diuji)
+    -> collector lokal (Mac M1 melalui Rosetta; tervalidasi)
     -> endpoint receiver pribadi
     -> validasi + normalisasi + deduplikasi
     -> Google Sheets (harga terkini)
@@ -34,6 +34,8 @@ corepack pnpm start:poc
 ```
 
 Instruksi collector Mac M1, konfigurasi private-only, hasil capture nyata, dan mapping payload tersedia di [`docs/mac-m1-poc.md`](docs/mac-m1-poc.md).
+
+Implementasi Task 08 untuk direct collector ingest melalui Vercel Hobby dan idempotent Apps Script `Market Prices` upsert dijelaskan di [`docs/task-08-secure-ingest.md`](docs/task-08-secure-ingest.md). Deployment dan gameplay live telah diverifikasi; secret tetap tidak disimpan di repository.
 
 ## Penyimpanan harga: Google Sheets
 Tabel terstruktur **`Market Prices`** sudah dibuat (schema akan divalidasi ulang sesudah PoC). **Satu baris per** `(server, item_id, city, quality)`.
@@ -60,7 +62,8 @@ Tabel terstruktur **`Market Prices`** sudah dibuat (schema akan divalidasi ulang
 - Workbook master yang baru ini terpisah dari spreadsheet BO lama. Jangan mencampurkan atau memigrasikan data komunitas lama ke workbook ini.
 
 ## API dan keamanan
-- Endpoint **ingest** hanya menerima event dari collector yang diizinkan (autentikasi/token + validasi payload).
+- Endpoint collector `POST /marketorders.ingest` tidak memakai autentikasi pada MVP karena client upstream tidak dapat menambahkan header; endpoint tetap membatasi ukuran dan memvalidasi payload secara ketat.
+- Jalur Vercel ke Apps Script memakai shared secret dari Vercel Environment Variables dan Apps Script Properties agar akses tulis Sheet tidak terekspos.
 - Endpoint **read-only** hanya mengembalikan data harga yang diperlukan web, tidak mengekspos akses tulis maupun tab pribadi seperti `Catatan BO`.
 - Simpan token dan kredensial di konfigurasi rahasia, **bukan** di GitHub.
 - Gunakan batch update, deduplikasi, dan retry terbatas agar kuota Google Sheets/Apps Script efisien.
@@ -77,7 +80,7 @@ Pilihan implementasi (Apps Script / Cloudflare Worker + akses Sheets) diputuskan
 
 ## Workbook tujuan yang sudah dibuat (28 Oktober 2026)
 
-Google Sheets proyek sekarang memiliki tab **`README`**, **`Items`**, **`Craft Recipes`**, **`Refining Recipes`**, dan **`Market Prices`**. Master item dan resep telah disiapkan; **belum ada satu pun harga market yang dimasukkan**. Workbook ini terpisah dari spreadsheet BO lama yang pernah digunakan.
+Google Sheets proyek sekarang memiliki tab **`README`**, **`Items`**, **`Craft Recipes`**, **`Refining Recipes`**, dan **`Market Prices`**. Master item dan resep telah disiapkan, dan harga market hasil collector lokal telah berhasil masuk. Workbook ini terpisah dari spreadsheet BO lama yang pernah digunakan.
 
 **Kontrak tab `Market Prices` (header aktual; row 1):**
 
@@ -93,9 +96,9 @@ lowest_sell_price | lowest_sell_observed_at | last_ingested_at | source
 - Sheet akses ditangani dengan secret konfigurasi, **bukan URL publik/ID spreadsheet yang di-hardcode dalam repo**.
 - Sinkronisasi data komunitas pada workbook lama tidak boleh disambungkan ke target baru ini.
 
-Skema receiver final dan metode ingest menunggu **PoC packet collector Mac M1** agar sesuai format event yang nyata.
+Skema receiver dan metode ingest telah divalidasi terhadap event collector Mac M1 yang nyata.
 
-**Sumber harga tetap private-only:** tidak mengambil harga dari API komunitas dan tidak mengunggah hasil scan pribadi ke komunitas. Sheet harga masih kosong hingga receiver diimplementasikan.
+**Sumber harga tetap private-only:** tidak mengambil harga dari API komunitas dan tidak mengunggah hasil scan pribadi ke komunitas.
 
 ## Ekosistem repositori
 

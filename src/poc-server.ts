@@ -21,4 +21,3 @@ function stop(): void {
 
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
-

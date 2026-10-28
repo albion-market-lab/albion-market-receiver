@@ -1,9 +1,11 @@
 node_modules/
 dist/
 var/
+.vercel/
+.env
+.env.*
 *.log
 albiondata-client/
 albiondata-client-executable
 *.pcap
 *.pcapng
-
