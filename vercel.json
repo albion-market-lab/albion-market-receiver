@@ -1,10 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "builds": [
-    { "src": "api/marketorders.ingest.ts", "use": "@vercel/node" }
+    { "src": "api/marketorders.ingest.ts", "use": "@vercel/node" },
+    { "src": "api/prices.ts", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/marketorders\\.ingest", "dest": "/api/marketorders.ingest.ts" }
+    { "src": "/marketorders\\.ingest", "dest": "/api/marketorders.ingest.ts" },
+    { "src": "/prices", "dest": "/api/prices.ts" }
   ]
 }
 

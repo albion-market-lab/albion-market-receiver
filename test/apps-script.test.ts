@@ -47,7 +47,7 @@ async function harness({ lockAvailable = true, failSetValues = false }: HarnessO
   return {
     operations,
     table,
-    post: (body: unknown) => JSON.parse(doPost({ postData: { contents: JSON.stringify(body) } }).text) as { ok: boolean; written?: number; duplicate?: boolean },
+    post: (body: unknown) => JSON.parse(doPost({ postData: { contents: JSON.stringify(body) } }).text) as Record<string, unknown>,
   };
 }
 
@@ -88,6 +88,30 @@ test("Apps Script does not flush duplicate or unchanged events", async () => {
   app.operations.length = 0;
   app.post({ ...body, eventId: "b".repeat(64) });
   assert.deepEqual(app.operations, ["tryLock", "persistFingerprint", "releaseLock"]);
+});
+
+test("Apps Script exposes only filtered Market Prices rows through an authenticated read", async () => {
+  const app = await harness();
+  app.post({ secret: "shared-secret", eventId: "a".repeat(64), rows: [row()] });
+  app.operations.length = 0;
+  const result = app.post({ secret: "shared-secret", action: "read", server: "East/Asia", itemIds: ["T5_FIBER"] });
+  assert.deepEqual(result, {
+    ok: true,
+    server: "East/Asia",
+    items: [{
+      server: "East/Asia", itemId: "T5_FIBER", city: "Martlock", quality: 1,
+      highestBuyPrice: 372, highestBuyObservedAt: "2026-10-28T15:18:17.108Z",
+      lowestSellPrice: null, lowestSellObservedAt: null,
+    }],
+  });
+  assert.deepEqual(app.operations, ["tryLock", "releaseLock"]);
+});
+
+test("Apps Script read returns an empty snapshot without writing", async () => {
+  const app = await harness();
+  assert.deepEqual(app.post({ secret: "shared-secret", action: "read", server: "East/Asia" }), { ok: true, server: "East/Asia", items: [] });
+  assert.equal(app.table.length, 1);
+  assert.ok(!app.operations.includes("setValues"));
 });
 
 test("Apps Script preserves BUY while updating SELL and ignores older observations", async () => {

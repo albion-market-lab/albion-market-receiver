@@ -4,6 +4,7 @@ const HEADERS = [
   "lowest_sell_price", "lowest_sell_observed_at", "last_ingested_at", "source",
 ];
 const RECENT_EVENT_LIMIT = 100;
+const READ_ITEM_LIMIT = 100;
 
 function response(body) {
   return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(ContentService.MimeType.JSON);
@@ -34,23 +35,49 @@ function toValues(row) {
   ];
 }
 
+function marketSheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MARKET_SHEET);
+  if (!sheet) throw new Error("Market Prices sheet is missing.");
+  const headers = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  if (JSON.stringify(headers) !== JSON.stringify(HEADERS)) throw new Error("Market Prices headers do not match.");
+  return sheet;
+}
+
+function readSnapshot(input) {
+  if (input.server !== "East/Asia" || (input.itemIds !== undefined && (!Array.isArray(input.itemIds) || input.itemIds.length < 1 || input.itemIds.length > READ_ITEM_LIMIT))) throw new Error("Invalid read request.");
+  if (input.itemIds && input.itemIds.some((itemId) => typeof itemId !== "string" || !/^[A-Z0-9_]+(?:@[1-4])?$/.test(itemId))) throw new Error("Invalid itemIds.");
+  const sheet = marketSheet();
+  const rowCount = sheet.getLastRow() - 1;
+  if (rowCount > 2000) throw new Error("Market snapshot is too large.");
+  const wanted = input.itemIds ? new Set(input.itemIds) : null;
+  const values = rowCount > 0 ? sheet.getRange(2, 1, rowCount, HEADERS.length).getValues() : [];
+  const items = values.filter((row) => row[0] === input.server && (!wanted || wanted.has(row[1]))).map((row) => {
+    if (typeof row[1] !== "string" || typeof row[2] !== "string" || !Number.isInteger(row[3]) || row[3] < 1 || row[3] > 5) throw new Error("Invalid Market Prices row.");
+    if ((row[4] !== "" && (!Number.isSafeInteger(row[4]) || row[4] <= 0)) || (row[6] !== "" && (!Number.isSafeInteger(row[6]) || row[6] <= 0))) throw new Error("Invalid Market Prices price.");
+    return {
+      server: row[0], itemId: row[1], city: row[2], quality: row[3],
+      highestBuyPrice: row[4] === "" ? null : row[4], highestBuyObservedAt: row[5] || null,
+      lowestSellPrice: row[6] === "" ? null : row[6], lowestSellObservedAt: row[7] || null,
+    };
+  });
+  return response({ ok: true, server: input.server, items: items });
+}
+
 function doPost(event) {
   const lock = LockService.getScriptLock();
   try {
     const input = JSON.parse(event.postData.contents);
     const expectedSecret = PropertiesService.getScriptProperties().getProperty("INGEST_SECRET");
     if (!expectedSecret || input.secret !== expectedSecret) throw new Error("Unauthorized.");
-    if (!/^[a-f0-9]{64}$/.test(input.eventId) || !Array.isArray(input.rows) || input.rows.length === 0) throw new Error("Invalid request.");
     if (!lock.tryLock(10000)) throw new Error("Ingest is busy.");
+    if (input.action === "read") return readSnapshot(input);
+    if (!/^[a-f0-9]{64}$/.test(input.eventId) || !Array.isArray(input.rows) || input.rows.length === 0) throw new Error("Invalid request.");
 
     const properties = PropertiesService.getScriptProperties();
     const recent = JSON.parse(properties.getProperty("RECENT_EVENT_IDS") || "[]");
     if (recent.includes(input.eventId)) return response({ ok: true, written: 0, duplicate: true });
 
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MARKET_SHEET);
-    if (!sheet) throw new Error("Market Prices sheet is missing.");
-    const headers = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
-    if (JSON.stringify(headers) !== JSON.stringify(HEADERS)) throw new Error("Market Prices headers do not match.");
+    const sheet = marketSheet();
 
     const values = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.length).getValues() : [];
     const indexes = new Map(values.map((row, index) => [keyOf(row), index]));

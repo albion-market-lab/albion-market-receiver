@@ -64,12 +64,57 @@ Tabel terstruktur **`Market Prices`** sudah dibuat (schema akan divalidasi ulang
 ## API dan keamanan
 - Endpoint collector `POST /marketorders.ingest` tidak memakai autentikasi pada MVP karena client upstream tidak dapat menambahkan header; endpoint tetap membatasi ukuran dan memvalidasi payload secara ketat.
 - Jalur Vercel ke Apps Script memakai shared secret dari Vercel Environment Variables dan Apps Script Properties agar akses tulis Sheet tidak terekspos.
-- Endpoint **read-only** hanya mengembalikan data harga yang diperlukan web, tidak mengekspos akses tulis maupun tab pribadi seperti `Catatan BO`.
+- Endpoint **read-only** hanya mengembalikan data dari `Market Prices`, tidak mengekspos akses tulis maupun tab master/private.
 - Simpan token dan kredensial di konfigurasi rahasia, **bukan** di GitHub.
 - Gunakan batch update, deduplikasi, dan retry terbatas agar kuota Google Sheets/Apps Script efisien.
 - Target deployment serverless/free tier; **tanpa VPS permanen** untuk MVP.
 
-Pilihan implementasi (Apps Script / Cloudflare Worker + akses Sheets) diputuskan setelah PoC payload dan akses Google Sheets. Jangan mengunci teknologi sebelum itu.
+## Read-only price API
+
+`GET /prices` mengembalikan snapshot yang cocok dengan kontrak `MarketPrice` calculator. `server` opsional dan default ke `East/Asia`; filter `itemIds` opsional, comma-separated atau berulang, maksimum 100 ID.
+
+```bash
+curl -G 'https://<VERCEL_DOMAIN>/prices' \
+  --data-urlencode 'server=East/Asia' \
+  --data-urlencode 'itemIds=T5_FIBER,T4_FIBER'
+```
+
+Mock response:
+
+```json
+{
+  "server": "East/Asia",
+  "items": [{
+    "server": "East/Asia",
+    "itemId": "T5_FIBER",
+    "city": "Martlock",
+    "quality": 1,
+    "highestBuyPrice": 372,
+    "highestBuyObservedAt": "2026-10-28T15:18:17.108Z",
+    "lowestSellPrice": null,
+    "lowestSellObservedAt": null
+  }]
+}
+```
+
+Hanya baris yang tersedia dikembalikan. Dataset atau filter tanpa hasil menghasilkan `200 {"server":"East/Asia","items":[]}`; harga yang belum ada tetap `null`, bukan nol. Input tidak valid menghasilkan 400, origin yang tidak diizinkan 403, method selain GET/OPTIONS 405, konfigurasi tidak lengkap 503, dan kegagalan Apps Script 502.
+
+Environment Vercel:
+
+| Variable | Nilai |
+| --- | --- |
+| `APPS_SCRIPT_URL` | URL `/exec` deployment Apps Script; server-only |
+| `APPS_SCRIPT_SECRET` | Sama dengan Script Property `INGEST_SECRET`; server-only |
+| `WEB_ORIGIN` | Origin web yang diizinkan CORS, contoh `https://example.vercel.app` |
+| `PRICE_CACHE_TTL_SECONDS` | TTL CDN 1–300 detik; default 60 |
+
+Apps Script menerima read action melalui POST ber-secret dari Vercel, tetapi endpoint browser tetap GET-only dan tidak pernah mengembalikan URL atau secret tersebut. Respons sukses di-cache singkat oleh Vercel CDN; timestamp observasi di body tidak diubah.
+
+Deployment Task 09 memerlukan versi baru Apps Script, penambahan `WEB_ORIGIN` dan opsional `PRICE_CACHE_TTL_SECONDS` di Vercel, lalu deployment production Vercel baru. Smoke test endpoint dengan `curl`, kemudian uji dari origin web yang dikonfigurasi. Jangan memasukkan nilai secret ke repository atau bundle browser.
+
+Production verification pada 29 Oktober 2026 berhasil untuk `https://albion-market-receiver.vercel.app/prices`: filtered GET mengembalikan snapshot nyata dengan HTTP 200, POST ditolak 405, origin lain ditolak 403, dan request GET kedua menghasilkan Vercel cache hit.
+
+> **Audit note — pending website deployment:** `WEB_ORIGIN` masih menggunakan `http://localhost:5173`. Ketika website production sudah live, ganti nilainya dengan origin website yang sebenarnya, deploy ulang receiver, lalu verifikasi respons CORS dari origin tersebut sebelum menutup audit integrasi web.
 
 ## Selesai jika
 - Market yang dibuka manual menghasilkan event ke endpoint **pribadi saja**.
