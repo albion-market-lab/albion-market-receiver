@@ -1,0 +1,18 @@
+{
+  "receivedAt": "2026-10-28T15:18:17.108Z",
+  "payload": {
+    "Orders": [
+      {
+        "ItemTypeId": "T5_FIBER",
+        "LocationId": "3008",
+        "QualityLevel": 1,
+        "EnchantmentLevel": 0,
+        "UnitPriceSilver": 3720000,
+        "Amount": 67,
+        "AuctionType": "request",
+        "Expires": "2026-12-26T19:43:11.38769"
+      }
+    ]
+  }
+}
+

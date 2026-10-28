@@ -1,0 +1,18 @@
+{
+  "receivedAt": "2026-10-28T15:18:17.189Z",
+  "payload": {
+    "Orders": [
+      {
+        "ItemTypeId": "T1_HIDE",
+        "LocationId": "3008",
+        "QualityLevel": 1,
+        "EnchantmentLevel": 0,
+        "UnitPriceSilver": 70000,
+        "Amount": 31,
+        "AuctionType": "offer",
+        "Expires": "2026-11-27T14:41:17.143146"
+      }
+    ]
+  }
+}
+

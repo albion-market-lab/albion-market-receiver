@@ -1,0 +1,9 @@
+node_modules/
+dist/
+var/
+*.log
+albiondata-client/
+albiondata-client-executable
+*.pcap
+*.pcapng
+

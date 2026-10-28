@@ -1,6 +1,6 @@
 # Albion Market Receiver
 
-> Jalur **privat** pengumpulan data harga Albion Online untuk **Albion Market Lab**. Status: **perencanaan — implementasi belum dimulai**.
+> Jalur **privat** pengumpulan data harga Albion Online untuk **Albion Market Lab**. Status: **PoC collector Mac M1 private-only tervalidasi**.
 
 **Hanya menggunakan scan pribadi.** Tidak mengambil harga dari AODP Community API, dan tidak mengirim hasil scan ke server komunitas.
 
@@ -24,6 +24,16 @@ Sebelum membangun parser atau schema final:
 4. Buktikan satu scan dapat diterima receiver dalam bentuk yang bisa dinormalisasi.
 
 Jangan menganggap dukungan Mac M1 atau format event AODP sudah terbukti sebelum PoC.
+
+Listener PoC dapat dibangun dan dijalankan dengan:
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+corepack pnpm start:poc
+```
+
+Instruksi collector Mac M1, konfigurasi private-only, hasil capture nyata, dan mapping payload tersedia di [`docs/mac-m1-poc.md`](docs/mac-m1-poc.md).
 
 ## Penyimpanan harga: Google Sheets
 Tabel terstruktur **`Market Prices`** sudah dibuat (schema akan divalidasi ulang sesudah PoC). **Satu baris per** `(server, item_id, city, quality)`.
