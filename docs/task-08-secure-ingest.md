@@ -1,6 +1,6 @@
 # Task 08 — Vercel ingest and Apps Script upsert
 
-Status: **PASS — production deployment and live gameplay verification completed on 28 October 2026**.
+Status: **PASS WITH ACCEPTED LIMITATIONS — production deployment and live gameplay verification completed on 28 October 2026; final audit remediation documented below**.
 
 ## Architecture
 
@@ -29,11 +29,18 @@ The public collector endpoint intentionally has no authentication for this perso
 - Missing sides remain empty, never zero.
 - Older received timestamps do not overwrite newer timestamps.
 - Exact raw-payload replay is fingerprinted and ignored while its ID remains in the latest 100 processed event IDs.
-- Apps Script uses `LockService` around fingerprint check, read, merge, and write.
+- Apps Script uses `LockService` around fingerprint check, read, merge, write, and `SpreadsheetApp.flush()`.
+- A changed table is flushed before its event fingerprint is persisted and before the lock is released. Duplicate and unchanged events do not flush.
 - The table is persisted with one `setValues` call per changed event.
 - `source` remains `local_collector`.
 
 The collector payload does not include an observation timestamp. Vercel's HTTP receipt time is therefore only a proxy for observation time, not proof that the packet was freshly captured. A replay outside the 100-fingerprint window can refresh that proxy timestamp. This is an explicit MVP limitation; no timestamp is invented from order expiry.
+
+### Cross-batch observation boundary
+
+The real Task 07 payload contains only `Orders`; it has no scan identifier, sequence, observation timestamp, or final-batch marker. The UUID shown as `Identifier` in collector logs is generated per upload and is not included in the HTTP body. Live captures also show that one market interaction can produce several batches of up to 50 orders.
+
+Consequently, the receiver cannot reliably distinguish another partial batch from a genuinely newer market observation. It selects the highest BUY and lowest SELL within each payload. Across sequential payloads, the later Vercel receipt time replaces the same side, while the opposite side remains intact. This avoids retaining historical extrema forever, but a later partial batch can temporarily replace a better price from the same interaction. Cross-batch aggregation remains an accepted MVP limitation, not a solved semantic guarantee. It requires a trustworthy scan boundary from the collector protocol before implementation.
 
 ## Automated validation
 
@@ -44,7 +51,7 @@ corepack pnpm typecheck
 corepack pnpm build
 ```
 
-Tests execute the Apps Script source with in-memory mocks and cover insert, exact replay, BUY/SELL preservation, older-event protection, incorrect secret, real collector fixtures, malformed/oversized requests, and Apps Script failure.
+Tests execute the Apps Script source with in-memory mocks and cover insert, exact replay, BUY/SELL preservation, older-event protection, cross-batch replacement semantics, flush/fingerprint/lock ordering, write failure, incorrect secret, real collector fixtures, malformed/oversized requests, and Apps Script failure.
 
 ## Deploy Google Apps Script
 
@@ -59,6 +66,8 @@ Tests execute the Apps Script source with in-memory mocks and cover insert, exac
 9. Copy the `/exec` deployment URL; do not commit it.
 
 Apps Script returns JSON with `{ok,written,duplicate}`. Apps Script web apps may return HTTP 200 for application errors, so the Vercel function checks `ok` and returns HTTP 502 when persistence fails.
+
+After changing `apps-script/Code.gs`, update production manually: open **Deploy -> Manage deployments**, edit the existing web app, select **New version**, and deploy. Keep the existing URL, access setting, and Script Property. This audit changes only Apps Script and local tests/docs, so Vercel does not require redeployment.
 
 ## Deploy Vercel Hobby
 
@@ -132,5 +141,6 @@ Keep Vercel logs, Apps Script execution logs, raw payloads, URLs, and secrets lo
 - Apps Script rewrites the current snapshot table in one batch. This is simple and atomic under the script lock, but not intended for high-volume multi-user ingestion.
 - The 100-event fingerprint window bounds Script Properties usage. Very old exact replays are not distinguishable from fresh identical payloads.
 - Receipt time is a freshness proxy because the collector supplies no observation timestamp.
+- Separate collector batches cannot be grouped safely without a scan boundary; same-side values therefore follow the latest receipt rather than a historical cross-batch maximum/minimum.
 
 Task 09 read endpoints and frontend freshness UX are not included.

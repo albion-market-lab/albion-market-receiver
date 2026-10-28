@@ -34,6 +34,19 @@ test("keeps item, city, quality, and enchantment keys separate", async () => {
   ]);
 });
 
+test("selects the highest BUY and lowest SELL within one collector batch", () => {
+  const result = normalizeCollectorEvent(envelope("2026-10-28T12:00:00Z", [
+    order({ UnitPriceSilver: 3_700_000 }),
+    order({ UnitPriceSilver: 3_800_000 }),
+    order({ UnitPriceSilver: 3_600_000 }),
+    order({ AuctionType: "offer", UnitPriceSilver: 4_100_000 }),
+    order({ AuctionType: "offer", UnitPriceSilver: 3_900_000 }),
+    order({ AuctionType: "offer", UnitPriceSilver: 4_000_000 }),
+  ]));
+  assert.equal(result.rows[0]!.highestBuyPrice, 380);
+  assert.equal(result.rows[0]!.lowestSellPrice, 390);
+});
+
 test("accepts the actual SELL fixture", async () => {
   const fixture = JSON.parse(await readFile(join(process.cwd(), "test/fixtures/collector-event-sell.json"), "utf8")) as { receivedAt: string; payload: unknown };
   const result = normalizeCollectorEvent({ server: "East/Asia", ...fixture });

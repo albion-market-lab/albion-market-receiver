@@ -85,7 +85,10 @@ function doPost(event) {
       if (changed) written += 1;
     });
 
-    if (written > 0) sheet.getRange(2, 1, values.length, HEADERS.length).setValues(values);
+    if (written > 0) {
+      sheet.getRange(2, 1, values.length, HEADERS.length).setValues(values);
+      SpreadsheetApp.flush();
+    }
     recent.push(input.eventId);
     properties.setProperty("RECENT_EVENT_IDS", JSON.stringify(recent.slice(-RECENT_EVENT_LIMIT)));
     return response({ ok: true, written, duplicate: false });
