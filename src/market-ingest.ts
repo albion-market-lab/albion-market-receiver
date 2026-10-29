@@ -42,6 +42,13 @@ export interface CollectorEnvelope {
 
 export class InvalidIngestError extends Error {}
 
+export function normalizeLocationId(value: unknown): string {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) throw new InvalidIngestError("LocationId is invalid.");
+  const canonical = value.replace(/^0+(?=\d)/, "");
+  if (!CITIES[canonical]) throw new InvalidIngestError("LocationId is invalid.");
+  return canonical;
+}
+
 export interface NormalizedCollectorEvent {
   received: number;
   rows: MarketPriceRow[];
@@ -64,11 +71,13 @@ function parseEnvelope(value: unknown): CollectorEnvelope {
     if (!value || typeof value !== "object") throw new InvalidIngestError(`Order ${index} is invalid.`);
     const order = value as Record<string, unknown>;
     if (typeof order.ItemTypeId !== "string" || !/^[A-Z0-9_]+(?:@[1-4])?$/.test(order.ItemTypeId)) throw new InvalidIngestError(`Order ${index} ItemTypeId is invalid.`);
-    if (typeof order.LocationId !== "string" || !CITIES[order.LocationId]) throw new InvalidIngestError(`Order ${index} LocationId is invalid.`);
+    let locationId: string;
+    try { locationId = normalizeLocationId(order.LocationId); }
+    catch { throw new InvalidIngestError(`Order ${index} LocationId is invalid.`); }
     if (order.AuctionType !== "request" && order.AuctionType !== "offer") throw new InvalidIngestError(`Order ${index} AuctionType is invalid.`);
     return {
       ItemTypeId: order.ItemTypeId,
-      LocationId: order.LocationId,
+      LocationId: locationId,
       QualityLevel: requiredInteger(order.QualityLevel, `Order ${index} QualityLevel`, 1),
       EnchantmentLevel: requiredInteger(order.EnchantmentLevel, `Order ${index} EnchantmentLevel`),
       UnitPriceSilver: requiredInteger(order.UnitPriceSilver, `Order ${index} UnitPriceSilver`, 1),

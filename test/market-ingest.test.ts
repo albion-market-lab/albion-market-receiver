@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { InvalidIngestError, normalizeCollectorEvent } from "../src/market-ingest.js";
+import { InvalidIngestError, normalizeCollectorEvent, normalizeLocationId } from "../src/market-ingest.js";
 
 const order = (overrides: Record<string, unknown> = {}) => ({
   ItemTypeId: "T5_FIBER", LocationId: "3008", QualityLevel: 1, EnchantmentLevel: 0,
@@ -32,6 +32,33 @@ test("keeps item, city, quality, and enchantment keys separate", async () => {
     ["T5_FIBER", "Martlock", 1], ["T5_FIBER", "Bridgewatch", 1],
     ["T5_FIBER", "Martlock", 2], ["T5_FIBER@1", "Martlock", 1],
   ]);
+});
+
+test("canonicalizes numeric Royal City location IDs and rejects invalid locations", () => {
+  for (const [locationId, canonicalId, city] of [["7", "7", "Thetford"], ["0007", "7", "Thetford"], ["0000007", "7", "Thetford"], ["1002", "1002", "Lymhurst"], ["2004", "2004", "Bridgewatch"], ["3008", "3008", "Martlock"], ["4002", "4002", "Fort Sterling"]] as const) {
+    const canonical = normalizeLocationId(locationId);
+    const result = normalizeCollectorEvent(envelope("2026-10-28T12:00:00Z", [order({ LocationId: locationId })]));
+    assert.equal(canonical, canonicalId);
+    assert.equal(result.rows[0]!.city, city);
+  }
+  for (const locationId of ["9999", "", "abc", "7x", " 7", "+7"]) {
+    assert.throws(() => normalizeLocationId(locationId), InvalidIngestError);
+    assert.throws(() => normalizeCollectorEvent(envelope("2026-10-28T12:00:00Z", [order({ LocationId: locationId })])), InvalidIngestError);
+  }
+});
+
+test("normalizes a multi-order Thetford batch without changing order semantics", () => {
+  const result = normalizeCollectorEvent(envelope("2026-10-28T12:00:00Z", [
+    order({ LocationId: "0007", QualityLevel: 2, EnchantmentLevel: 1, UnitPriceSilver: 3_720_000, AuctionType: "request" }),
+    order({ LocationId: "00007", QualityLevel: 2, EnchantmentLevel: 1, UnitPriceSilver: 3_900_000, AuctionType: "offer" }),
+  ]));
+  assert.equal(result.received, 2);
+  assert.deepEqual(result.rows[0], {
+    server: "East/Asia", itemId: "T5_FIBER@1", city: "Thetford", quality: 2,
+    highestBuyPrice: 372, highestBuyObservedAt: "2026-10-28T12:00:00.000Z",
+    lowestSellPrice: 390, lowestSellObservedAt: "2026-10-28T12:00:00.000Z",
+    lastIngestedAt: "2026-10-28T12:00:00.000Z", source: "local_collector",
+  });
 });
 
 test("selects the highest BUY and lowest SELL within one collector batch", () => {

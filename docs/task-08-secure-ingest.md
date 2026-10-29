@@ -25,6 +25,7 @@ The public collector endpoint intentionally has no authentication for this perso
 - Snapshot key: `(server,item_id,city,quality)`.
 - `request` selects the highest BUY; `offer` selects the lowest SELL.
 - Raw `UnitPriceSilver` is divided by 10,000.
+- Numeric `LocationId` values are canonicalized before Royal City lookup, so leading-zero forms such as `0007` map to the same city as `7`; unknown and non-numeric IDs remain invalid. The raw request body used for event fingerprinting is not changed.
 - BUY and SELL values and timestamps update independently.
 - Missing sides remain empty, never zero.
 - Older received timestamps do not overwrite newer timestamps.
