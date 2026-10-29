@@ -114,7 +114,7 @@ Deployment Task 09 memerlukan versi baru Apps Script, penambahan `WEB_ORIGIN` da
 
 Production verification pada 29 Oktober 2026 berhasil untuk `https://albion-market-receiver.vercel.app/prices`: filtered GET mengembalikan snapshot nyata dengan HTTP 200, POST ditolak 405, origin lain ditolak 403, dan request GET kedua menghasilkan Vercel cache hit.
 
-> **Audit note — pending website deployment:** `WEB_ORIGIN` masih menggunakan `http://localhost:5173`. Ketika website production sudah live, ganti nilainya dengan origin website yang sebenarnya, deploy ulang receiver, lalu verifikasi respons CORS dari origin tersebut sebelum menutup audit integrasi web.
+> **Audit note — website production verified (29 Oktober 2026):** `WEB_ORIGIN` menggunakan `https://albion-crafting-web.vercel.app`. Receiver telah dideploy ulang; request dari origin tersebut mendapat HTTP 200 dan header CORS yang sesuai, sedangkan origin localhost lama ditolak HTTP 403.
 
 ## Selesai jika
 - Market yang dibuka manual menghasilkan event ke endpoint **pribadi saja**.
