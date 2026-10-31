@@ -7,7 +7,7 @@ const outputDirectory = resolve(process.env.POC_OUTPUT_DIR ?? "var/collector-eve
 const server = createCollectorListener({ outputDirectory });
 
 server.listen(port, host, () => {
-  console.log(`Collector listener ready at http://${host}:${port}/marketorders.ingest`);
+  console.log(`Collector listener ready at http://${host}:${port} for market orders and histories`);
 });
 
 function stop(): void {

@@ -63,6 +63,7 @@ Tabel terstruktur **`Market Prices`** sudah dibuat (schema akan divalidasi ulang
 
 ## API dan keamanan
 - Endpoint collector `POST /marketorders.ingest` tidak memakai autentikasi pada MVP karena client upstream tidak dapat menambahkan header; endpoint tetap membatasi ukuran dan memvalidasi payload secara ketat.
+- `POST /markethistories.ingest` menyimpan bucket aktivitas collector secara terpisah; `GET /activity` hanya mengekspos agregat harian yang tervalidasi. Kontrak, setup sheet, dan checklist live ada di `docs/smart-buy-order.md`.
 - Jalur Vercel ke Apps Script memakai shared secret dari Vercel Environment Variables dan Apps Script Properties agar akses tulis Sheet tidak terekspos.
 - Endpoint **read-only** hanya mengembalikan data dari `Market Prices`, tidak mengekspos akses tulis maupun tab master/private.
 - Simpan token dan kredensial di konfigurasi rahasia, **bukan** di GitHub.

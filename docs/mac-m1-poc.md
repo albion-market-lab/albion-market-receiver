@@ -30,7 +30,9 @@ corepack pnpm build
 corepack pnpm start:poc
 ```
 
-The listener binds only to `127.0.0.1:8787`, accepts only `POST /marketorders.ingest` JSON, caps bodies at 1 MiB, and stores at most three raw local samples per process under ignored `var/collector-events/`. Sample names combine receipt time with a random UUID, existing files are never overwritten or deleted, and valid events still receive HTTP 200 after the per-session sample limit. Stop it with `Ctrl-C`.
+The listener binds only to `127.0.0.1:8787`, accepts JSON at `POST /marketorders.ingest` and `POST /markethistories.ingest`, caps bodies at 1 MiB, and stores at most three raw local samples per route per process under ignored `var/collector-events/`. Sample names combine receipt time with a random UUID, existing files are never overwritten or deleted, and valid events still receive HTTP 200 after the per-route sample limit. Stop it with `Ctrl-C`.
+
+The history route exists only to collect local evidence for Smart Buy Order development. Raw history samples remain ignored and must be reviewed and sanitized before any fixture is committed. Until an actual sample confirms runtime timestamp units and payload values, market-history production ingestion remains **MANUAL VERIFICATION REQUIRED**.
 
 ## Start the collector only after the listener is ready
 

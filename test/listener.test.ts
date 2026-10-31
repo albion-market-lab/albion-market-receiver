@@ -16,7 +16,7 @@ async function start(existingOutputDirectory?: string) {
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
-  return { outputDirectory, url: `http://127.0.0.1:${port}/marketorders.ingest` };
+  return { outputDirectory, baseUrl: `http://127.0.0.1:${port}`, url: `http://127.0.0.1:${port}/marketorders.ingest` };
 }
 
 test("accepts and stores a market-order upload with receipt time", async () => {
@@ -55,6 +55,38 @@ test("stores at most three samples per session and keeps accepting events", asyn
 
   assert.deepEqual(responses.map(({ status }) => status), [200, 200, 200, 200, 200]);
   assert.equal((await readdir(outputDirectory)).length, MAX_SAMPLES);
+});
+
+test("accepts and stores collector market history separately", async () => {
+  const { outputDirectory, baseUrl } = await start();
+  const payload = {
+    AlbionId: 1001,
+    LocationId: "3008",
+    QualityLevel: 1,
+    Timescale: 1,
+    MarketHistories: [{ ItemAmount: 42, SilverAmount: 4200, Timestamp: 1_798_675_200 }],
+  };
+  const response = await fetch(`${baseUrl}/markethistories.ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+
+  assert.equal(response.status, 200);
+  const files = await readdir(outputDirectory);
+  assert.equal(files.length, 1);
+  assert.match(files[0]!, /^collector-history-/);
+  assert.deepEqual(JSON.parse(await readFile(join(outputDirectory, files[0]!), "utf8")), {
+    receivedAt: "2026-10-28T12:00:00.000Z",
+    payload,
+  });
+});
+
+test("keeps independent three-sample limits for market orders and histories", async () => {
+  const { outputDirectory, baseUrl } = await start();
+  const order = { Orders: [{}] };
+  const history = { AlbionId: 1001, LocationId: "3008", QualityLevel: 1, Timescale: 1, MarketHistories: [{}] };
+  for (let index = 0; index < MAX_SAMPLES + 1; index += 1) {
+    assert.equal((await fetch(`${baseUrl}/marketorders.ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(order) })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/markethistories.ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(history) })).status, 200);
+  }
+  assert.equal((await readdir(outputDirectory)).length, MAX_SAMPLES * 2);
 });
 
 test("rejects payloads larger than one MiB", async () => {

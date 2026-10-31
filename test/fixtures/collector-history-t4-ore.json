@@ -1,0 +1,23 @@
+{
+  "receivedAt": "2026-10-31T18:21:16.506Z",
+  "payload": {
+    "AlbionId": 1000,
+    "LocationId": "2004",
+    "QualityLevel": 1,
+    "Timescale": 1,
+    "MarketHistories": [
+      { "ItemAmount": 217, "SilverAmount": 251720000, "Timestamp": 639290664000000000 },
+      { "ItemAmount": 25158, "SilverAmount": 30964950000, "Timestamp": 639290448000000000 },
+      { "ItemAmount": 22475, "SilverAmount": 26406300000, "Timestamp": 639290232000000000 },
+      { "ItemAmount": 13195, "SilverAmount": 15594000000, "Timestamp": 639290016000000000 },
+      { "ItemAmount": 3836, "SilverAmount": 4342440000, "Timestamp": 639289800000000000 },
+      { "ItemAmount": 18656, "SilverAmount": 22177750000, "Timestamp": 639289584000000000 },
+      { "ItemAmount": 22037, "SilverAmount": 26378000000, "Timestamp": 639289368000000000 },
+      { "ItemAmount": 11810, "SilverAmount": 14002730000, "Timestamp": 639289152000000000 },
+      { "ItemAmount": 3835, "SilverAmount": 4545780000, "Timestamp": 639288936000000000 },
+      { "ItemAmount": 19993, "SilverAmount": 24372560000, "Timestamp": 639288720000000000 },
+      { "ItemAmount": 23362, "SilverAmount": 28050230000, "Timestamp": 639288504000000000 },
+      { "ItemAmount": 8689, "SilverAmount": 10546880000, "Timestamp": 639288288000000000 }
+    ]
+  }
+}

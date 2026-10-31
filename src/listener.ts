@@ -34,11 +34,24 @@ function isMarketUpload(value: unknown): value is { Orders: Record<string, unkno
   return Array.isArray(orders) && orders.length > 0 && orders.every((order) => order !== null && typeof order === "object" && !Array.isArray(order));
 }
 
+function isHistoryUpload(value: unknown): value is { MarketHistories: Record<string, unknown>[] } {
+  if (!value || typeof value !== "object") return false;
+  const upload = value as Record<string, unknown>;
+  return Number.isInteger(upload.AlbionId)
+    && typeof upload.LocationId === "string"
+    && Number.isInteger(upload.QualityLevel)
+    && Number.isInteger(upload.Timescale)
+    && Array.isArray(upload.MarketHistories)
+    && upload.MarketHistories.length > 0
+    && upload.MarketHistories.every((history) => history !== null && typeof history === "object" && !Array.isArray(history));
+}
+
 export function createCollectorListener({ outputDirectory, now = () => new Date() }: ListenerOptions) {
-  let sampleCount = 0;
+  const sampleCounts = new Map<string, number>();
 
   return createServer(async (request, response) => {
-    if (request.method !== "POST" || request.url !== "/marketorders.ingest") {
+    const kind = request.url === "/marketorders.ingest" ? "event" : request.url === "/markethistories.ingest" ? "history" : undefined;
+    if (request.method !== "POST" || !kind) {
       send(response, 404, "Not found");
       return;
     }
@@ -51,20 +64,24 @@ export function createCollectorListener({ outputDirectory, now = () => new Date(
     try {
       const body = await readBody(request);
       const payload: unknown = JSON.parse(body);
-      if (!isMarketUpload(payload)) {
-        send(response, 400, "Expected a non-empty Orders array");
+      if (kind === "event" ? !isMarketUpload(payload) : !isHistoryUpload(payload)) {
+        send(response, 400, kind === "event" ? "Expected a non-empty Orders array" : "Expected a market history upload");
         return;
       }
 
       const receivedAt = now().toISOString();
+      const sampleCount = sampleCounts.get(kind) ?? 0;
       if (sampleCount < MAX_SAMPLES) {
-        sampleCount += 1;
+        sampleCounts.set(kind, sampleCount + 1);
         await mkdir(outputDirectory, { recursive: true });
         const timestamp = receivedAt.replace(/\D/g, "");
-        await writeFile(join(outputDirectory, `collector-event-${timestamp}-${randomUUID()}.json`), `${JSON.stringify({ receivedAt, payload }, null, 2)}\n`, { flag: "wx" });
+        await writeFile(join(outputDirectory, `collector-${kind}-${timestamp}-${randomUUID()}.json`), `${JSON.stringify({ receivedAt, payload }, null, 2)}\n`, { flag: "wx" });
       }
 
-      console.log(`Received market event at ${receivedAt}: ${payload.Orders.length} orders`);
+      const count = kind === "event"
+        ? (payload as { Orders: unknown[] }).Orders.length
+        : (payload as { MarketHistories: unknown[] }).MarketHistories.length;
+      console.log(`Received market ${kind} at ${receivedAt}: ${count} records`);
       send(response, 200, "Accepted");
     } catch (error) {
       if (error instanceof Error && error.message === "PAYLOAD_TOO_LARGE") {

@@ -7,7 +7,8 @@
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "start:poc": "node dist/src/poc-server.js",
     "test": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node --test dist/test/*.test.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate:item-map": "node scripts/generate-albion-item-map.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

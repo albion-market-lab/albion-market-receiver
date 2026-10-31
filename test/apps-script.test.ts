@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import vm from "node:vm";
 import { MARKET_PRICE_HEADERS, type MarketPriceRow } from "../src/market-ingest.js";
+import { MARKET_ACTIVITY_HEADERS, type MarketActivityRow } from "../src/market-history.js";
 
 interface HarnessOptions {
   lockAvailable?: boolean;
@@ -12,6 +13,7 @@ interface HarnessOptions {
 
 async function harness({ lockAvailable = true, failSetValues = false }: HarnessOptions = {}) {
   const table: Array<Array<string | number>> = [[...MARKET_PRICE_HEADERS]];
+  const activityTable: Array<Array<string | number>> = [[...MARKET_ACTIVITY_HEADERS]];
   const properties = new Map<string, string>([["INGEST_SECRET", "shared-secret"]]);
   const operations: string[] = [];
   let locked = false;
@@ -28,17 +30,21 @@ async function harness({ lockAvailable = true, failSetValues = false }: HarnessO
     }) },
     SpreadsheetApp: {
       flush: () => operations.push("flush"),
-      getActiveSpreadsheet: () => ({ getSheetByName: () => ({
-        getLastRow: () => table.length,
+      getActiveSpreadsheet: () => ({ getSheetByName: (name: string) => {
+        const selected = name === "Market Activity" ? activityTable : table;
+        return ({
+        getLastRow: () => selected.length,
+        deleteRows: (row: number, count: number) => { operations.push("deleteRows"); selected.splice(row - 1, count); },
         getRange: (row: number, column: number, rowCount: number, columnCount: number) => ({
-          getValues: () => table.slice(row - 1, row - 1 + rowCount).map((values) => values.slice(column - 1, column - 1 + columnCount)),
+          getValues: () => selected.slice(row - 1, row - 1 + rowCount).map((values) => values.slice(column - 1, column - 1 + columnCount)),
           setValues: (values: Array<Array<string | number>>) => {
             operations.push("setValues");
             if (failSetValues) throw new Error("setValues failed");
-            values.forEach((next, index) => { table[row - 1 + index] = [...next]; });
+            values.forEach((next, index) => { selected[row - 1 + index] = [...next]; });
           },
+          clearContent: () => { operations.push("clearContent"); selected.splice(row - 1, rowCount); },
         }),
-      }) }),
+      }); } }),
     },
     ContentService: { MimeType: { JSON: "JSON" }, createTextOutput: (text: string) => ({ text, setMimeType() { return this; } }) },
   });
@@ -47,6 +53,7 @@ async function harness({ lockAvailable = true, failSetValues = false }: HarnessO
   return {
     operations,
     table,
+    activityTable,
     post: (body: unknown) => JSON.parse(doPost({ postData: { contents: JSON.stringify(body) } }).text) as Record<string, unknown>,
   };
 }
@@ -56,6 +63,12 @@ const row = (overrides: Partial<MarketPriceRow> = {}): MarketPriceRow => ({
   highestBuyPrice: 372, highestBuyObservedAt: "2026-10-28T15:18:17.108Z",
   lowestSellPrice: null, lowestSellObservedAt: null,
   lastIngestedAt: "2026-10-28T15:18:17.108Z", source: "local_collector", ...overrides,
+});
+
+const activityRow = (overrides: Partial<MarketActivityRow> = {}): MarketActivityRow => ({
+  server: "East/Asia", itemId: "T4_ORE", city: "Bridgewatch", quality: 1, timescale: 1,
+  bucketTimestamp: "2026-10-31T18:00:00.000Z", itemAmount: 217, silverAmount: 251720000,
+  observedAt: "2026-10-31T18:21:16.506Z", source: "local_collector", ...overrides,
 });
 
 test("Apps Script inserts once and deduplicates exact replay", async () => {
@@ -150,5 +163,24 @@ test("Apps Script rejects an incorrect shared secret", async () => {
 test("Apps Script rejects a concurrent write when the lock is unavailable", async () => {
   const app = await harness({ lockAvailable: false });
   assert.equal(app.post({ secret: "shared-secret", eventId: "a".repeat(64), rows: [row()] }).ok, false);
+  assert.equal(app.table.length, 1);
+});
+
+test("Apps Script upserts activity buckets without inflating repeated scans", async () => {
+  const app = await harness();
+  const first = { secret: "shared-secret", action: "writeActivity", eventId: "a".repeat(64), rows: [activityRow()] };
+  assert.deepEqual(app.post(first), { ok: true, written: 1, duplicate: false });
+  assert.deepEqual(app.post(first), { ok: true, written: 0, duplicate: true });
+  assert.deepEqual(app.post({ ...first, eventId: "b".repeat(64), rows: [activityRow({ itemAmount: 300, observedAt: "2026-10-31T18:30:00.000Z" })] }), { ok: true, written: 1, duplicate: false });
+  assert.equal(app.activityTable.length, 2);
+  assert.equal(app.activityTable[1]?.[6], 300);
+});
+
+test("Apps Script reads activity independently from Market Prices", async () => {
+  const app = await harness();
+  app.post({ secret: "shared-secret", action: "writeActivity", eventId: "a".repeat(64), rows: [activityRow()] });
+  assert.deepEqual(app.post({ secret: "shared-secret", action: "readActivity", server: "East/Asia", itemIds: ["T4_ORE"] }), {
+    ok: true, server: "East/Asia", rows: [activityRow()],
+  });
   assert.equal(app.table.length, 1);
 });
