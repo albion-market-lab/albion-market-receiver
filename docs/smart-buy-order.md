@@ -16,9 +16,11 @@ Create a separate Google Sheet tab named `Market Activity` with these exact head
 server,item_id,city,quality,timescale,bucket_timestamp,item_amount,silver_amount,observed_at,source
 ```
 
-Deploy the local `apps-script/Code.gs` update only after the sheet exists. Activity keys are `server + item + city + quality + timescale + bucket timestamp`. Repeated scans replace a bucket with its newer observation and never add its volume. Writes update contiguous changed ranges and append new buckets instead of rewriting the whole sheet; rows older than seven days are pruned during activity writes. Market Prices remains unchanged.
+Deploy the local `apps-script/Code.gs` update only after the sheet exists. Activity keys are `server + item + city + quality + timescale + bucket timestamp`. Repeated scans replace a bucket with its newer observation and never add its volume. Writes update contiguous changed ranges and append new buckets instead of rewriting the whole sheet; rows older than seven days are pruned during activity writes. The script expands the tab when an append exceeds its current grid allocation and rejects retained data above 10,000 rows.
 
-The public `/activity` endpoint reads only daily-view (`Timescale: 1`) buckets. A UTC day counts toward coverage only when all four 00:00, 06:00, 12:00, and 18:00 buckets exist. Missing history is omitted, not converted to zero sales.
+The public `/activity` endpoint reads only daily-view (`Timescale: 1`) buckets. Collector evidence shows these six-hour timestamps are interval starts: a live 18:00 bucket continued changing after 18:00. A UTC day therefore counts only after all four 00:00, 06:00, 12:00, and 18:00 buckets exist and the final interval has ended at 00:00 the next day. Missing history is omitted, not converted to zero sales.
+
+`/prices` exposes only rows marked `local_collector`. A legacy `aodp_seed` row remains hidden until a new private scan replaces it. That first private observation clears the unverified opposite side; later private BUY and SELL scans may then populate both sides independently. Historical seed rows are retained rather than migrated or deleted.
 
 ## Private collection
 

@@ -10,6 +10,7 @@ const ACTIVITY_HEADERS = [
 ];
 const RECENT_EVENT_LIMIT = 100;
 const READ_ITEM_LIMIT = 100;
+const ACTIVITY_ROW_LIMIT = 10000;
 
 function response(body) {
   return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(ContentService.MimeType.JSON);
@@ -79,6 +80,11 @@ function contiguousRuns(indexes) {
   return runs;
 }
 
+function ensureRows(sheet, requiredLastRow) {
+  const current = sheet.getMaxRows();
+  if (requiredLastRow > current) sheet.insertRowsAfter(current, requiredLastRow - current);
+}
+
 function readSnapshot(input) {
   if (input.server !== "East/Asia" || (input.itemIds !== undefined && (!Array.isArray(input.itemIds) || input.itemIds.length < 1 || input.itemIds.length > READ_ITEM_LIMIT))) throw new Error("Invalid read request.");
   if (input.itemIds && input.itemIds.some((itemId) => typeof itemId !== "string" || !/^[A-Z0-9_]+(?:@[1-4])?$/.test(itemId))) throw new Error("Invalid itemIds.");
@@ -87,7 +93,7 @@ function readSnapshot(input) {
   if (rowCount > 2000) throw new Error("Market snapshot is too large.");
   const wanted = input.itemIds ? new Set(input.itemIds) : null;
   const values = rowCount > 0 ? sheet.getRange(2, 1, rowCount, HEADERS.length).getValues() : [];
-  const items = values.filter((row) => row[0] === input.server && (!wanted || wanted.has(row[1]))).map((row) => {
+  const items = values.filter((row) => row[9] === "local_collector" && row[0] === input.server && (!wanted || wanted.has(row[1]))).map((row) => {
     if (typeof row[1] !== "string" || typeof row[2] !== "string" || !Number.isInteger(row[3]) || row[3] < 1 || row[3] > 5) throw new Error("Invalid Market Prices row.");
     if ((row[4] !== "" && (!Number.isSafeInteger(row[4]) || row[4] <= 0)) || (row[6] !== "" && (!Number.isSafeInteger(row[6]) || row[6] <= 0))) throw new Error("Invalid Market Prices price.");
     return {
@@ -105,7 +111,7 @@ function readActivity(input) {
   const wanted = input.itemIds ? new Set(input.itemIds) : null;
   const sheet = activitySheet();
   const rowCount = sheet.getLastRow() - 1;
-  if (rowCount > 10000) throw new Error("Market activity is too large.");
+  if (rowCount > ACTIVITY_ROW_LIMIT) throw new Error("Market activity is too large.");
   const values = rowCount > 0 ? sheet.getRange(2, 1, rowCount, ACTIVITY_HEADERS.length).getValues() : [];
   const rows = values.filter((row) => row[0] === input.server && (!wanted || wanted.has(row[1]))).map((row) => ({
     server: row[0], itemId: row[1], city: row[2], quality: row[3], timescale: row[4], bucketTimestamp: row[5],
@@ -147,8 +153,12 @@ function writeActivity(input, properties) {
       written += 1;
     }
   });
+  if (values.length + appended.length > ACTIVITY_ROW_LIMIT) throw new Error("Market activity retention limit exceeded.");
   contiguousRuns(updated).forEach((run) => sheet.getRange(run[0] + 2, 1, run[1] - run[0] + 1, ACTIVITY_HEADERS.length).setValues(values.slice(run[0], run[1] + 1)));
-  if (appended.length > 0) sheet.getRange(values.length + 2, 1, appended.length, ACTIVITY_HEADERS.length).setValues(appended);
+  if (appended.length > 0) {
+    ensureRows(sheet, values.length + appended.length + 1);
+    sheet.getRange(values.length + 2, 1, appended.length, ACTIVITY_HEADERS.length).setValues(appended);
+  }
   if (written > 0 || expired.length > 0) {
     SpreadsheetApp.flush();
   }
@@ -190,6 +200,11 @@ function doPost(event) {
       }
 
       const current = values[index];
+      if (current[9] !== "local_collector") {
+        values[index] = next;
+        written += 1;
+        return;
+      }
       let changed = false;
       if (next[5] && (!current[5] || next[5] > current[5])) {
         current[4] = next[4];

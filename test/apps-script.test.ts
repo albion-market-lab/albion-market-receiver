@@ -9,13 +9,15 @@ import { MARKET_ACTIVITY_HEADERS, type MarketActivityRow } from "../src/market-h
 interface HarnessOptions {
   lockAvailable?: boolean;
   failSetValues?: boolean;
+  activityMaxRows?: number;
 }
 
-async function harness({ lockAvailable = true, failSetValues = false }: HarnessOptions = {}) {
+async function harness({ lockAvailable = true, failSetValues = false, activityMaxRows = 2000 }: HarnessOptions = {}) {
   const table: Array<Array<string | number>> = [[...MARKET_PRICE_HEADERS]];
   const activityTable: Array<Array<string | number>> = [[...MARKET_ACTIVITY_HEADERS]];
   const properties = new Map<string, string>([["INGEST_SECRET", "shared-secret"]]);
   const operations: string[] = [];
+  const maxRows = new Map([["Market Prices", 2000], ["Market Activity", activityMaxRows]]);
   let locked = false;
   const context = vm.createContext({
     console,
@@ -34,8 +36,12 @@ async function harness({ lockAvailable = true, failSetValues = false }: HarnessO
         const selected = name === "Market Activity" ? activityTable : table;
         return ({
         getLastRow: () => selected.length,
-        deleteRows: (row: number, count: number) => { operations.push("deleteRows"); selected.splice(row - 1, count); },
-        getRange: (row: number, column: number, rowCount: number, columnCount: number) => ({
+        getMaxRows: () => maxRows.get(name)!,
+        insertRowsAfter: (_row: number, count: number) => { operations.push("insertRowsAfter"); maxRows.set(name, maxRows.get(name)! + count); },
+        deleteRows: (row: number, count: number) => { operations.push("deleteRows"); selected.splice(row - 1, count); maxRows.set(name, maxRows.get(name)! - count); },
+        getRange: (row: number, column: number, rowCount: number, columnCount: number) => {
+          if (row + rowCount - 1 > maxRows.get(name)!) throw new Error("Range exceeds grid limits");
+          return ({
           getValues: () => selected.slice(row - 1, row - 1 + rowCount).map((values) => values.slice(column - 1, column - 1 + columnCount)),
           setValues: (values: Array<Array<string | number>>) => {
             operations.push("setValues");
@@ -43,7 +49,7 @@ async function harness({ lockAvailable = true, failSetValues = false }: HarnessO
             values.forEach((next, index) => { selected[row - 1 + index] = [...next]; });
           },
           clearContent: () => { operations.push("clearContent"); selected.splice(row - 1, rowCount); },
-        }),
+        }); },
       }); } }),
     },
     ContentService: { MimeType: { JSON: "JSON" }, createTextOutput: (text: string) => ({ text, setMimeType() { return this; } }) },
@@ -183,4 +189,64 @@ test("Apps Script reads activity independently from Market Prices", async () => 
     ok: true, server: "East/Asia", rows: [activityRow()],
   });
   assert.equal(app.table.length, 1);
+});
+
+test("Apps Script excludes seed-only prices from the private snapshot", async () => {
+  const app = await harness();
+  app.table.push(["East/Asia", "T5_FIBER", "Martlock", 1, 100, "2026-10-28T15:00:00.000Z", 110, "2026-10-28T15:00:00.000Z", "2026-10-28T15:00:00.000Z", "aodp_seed"]);
+  assert.deepEqual(app.post({ secret: "shared-secret", action: "read", server: "East/Asia", itemIds: ["T5_FIBER"] }), { ok: true, server: "East/Asia", items: [] });
+});
+
+test("Apps Script converts seed rows conservatively with independently verified private sides", async () => {
+  const app = await harness();
+  const seed = () => ["East/Asia", "T5_FIBER", "Martlock", 1, 100, "2026-10-28T15:00:00.000Z", 110, "2026-10-28T15:00:00.000Z", "2026-10-28T15:00:00.000Z", "aodp_seed"] as Array<string | number>;
+  app.table.push(seed());
+  app.post({ secret: "shared-secret", eventId: "a".repeat(64), rows: [row({ highestBuyPrice: 200, highestBuyObservedAt: "2026-10-28T16:00:00.000Z" })] });
+  assert.deepEqual(app.table[1]?.slice(4, 10), [200, "2026-10-28T16:00:00.000Z", "", "", "2026-10-28T15:18:17.108Z", "local_collector"]);
+  app.post({ secret: "shared-secret", eventId: "c".repeat(64), rows: [row({ highestBuyPrice: null, highestBuyObservedAt: null, lowestSellPrice: 220, lowestSellObservedAt: "2026-10-28T17:00:00.000Z" })] });
+  assert.deepEqual(app.table[1]?.slice(4, 8), [200, "2026-10-28T16:00:00.000Z", 220, "2026-10-28T17:00:00.000Z"]);
+
+  app.table[1] = seed();
+  app.post({ secret: "shared-secret", eventId: "b".repeat(64), rows: [row({ highestBuyPrice: null, highestBuyObservedAt: null, lowestSellPrice: 210, lowestSellObservedAt: "2026-10-28T16:00:00.000Z" })] });
+  assert.deepEqual(app.table[1]?.slice(4, 10), ["", "", 210, "2026-10-28T16:00:00.000Z", "2026-10-28T15:18:17.108Z", "local_collector"]);
+});
+
+test("Apps Script expands Market Activity beyond its initial grid allocation", async () => {
+  const app = await harness({ activityMaxRows: 2 });
+  const result = app.post({
+    secret: "shared-secret", action: "writeActivity", eventId: "a".repeat(64),
+    rows: [activityRow(), activityRow({ bucketTimestamp: "2026-10-31T12:00:00.000Z" })],
+  });
+  assert.deepEqual(result, { ok: true, written: 2, duplicate: false });
+  assert.equal(app.activityTable.length, 3);
+  assert.ok(app.operations.includes("insertRowsAfter"));
+});
+
+test("Apps Script prunes expired activity before expanding the retained grid", async () => {
+  const app = await harness({ activityMaxRows: 2 });
+  app.activityTable.push(["East/Asia", "T4_ORE", "Bridgewatch", 1, 1, "2026-10-20T00:00:00.000Z", 10, 100, "2026-10-20T01:00:00.000Z", "local_collector"]);
+  const result = app.post({
+    secret: "shared-secret", action: "writeActivity", eventId: "d".repeat(64),
+    rows: [activityRow({ bucketTimestamp: "2026-10-31T18:00:00.000Z" })],
+  });
+  assert.deepEqual(result, { ok: true, written: 1, duplicate: false });
+  assert.equal(app.activityTable.length, 2);
+  assert.equal(app.activityTable[1]?.[5], "2026-10-31T18:00:00.000Z");
+  assert.ok(app.operations.includes("deleteRows"));
+  assert.ok(app.operations.includes("insertRowsAfter"));
+});
+
+test("Apps Script accepts 10,000 retained activity rows and rejects unbounded growth", async () => {
+  const app = await harness({ activityMaxRows: 10001 });
+  for (let index = 0; index < 9999; index += 1) {
+    app.activityTable.push([
+      "East/Asia", "T4_ORE", "Bridgewatch", 1, 1, new Date(Date.UTC(2026, 9, 31) + index).toISOString(),
+      10, 100, "2026-11-01T00:00:00.000Z", "local_collector",
+    ]);
+  }
+  const body = { secret: "shared-secret", action: "writeActivity", rows: [activityRow({ bucketTimestamp: "2026-11-01T00:00:00.000Z" })] };
+  assert.deepEqual(app.post({ ...body, eventId: "e".repeat(64) }), { ok: true, written: 1, duplicate: false });
+  assert.equal(app.activityTable.length, 10001);
+  assert.equal(app.post({ ...body, eventId: "f".repeat(64), rows: [activityRow({ bucketTimestamp: "2026-11-01T00:00:00.001Z" })] }).ok, false);
+  assert.equal(app.activityTable.length, 10001);
 });

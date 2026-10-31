@@ -44,7 +44,7 @@ test("deduplicates repeated buckets and aggregates only complete four-bucket UTC
   const normalized = normalizeCollectorHistory({ server: "East/Asia", ...input });
   const duplicatePayload = { ...(input.payload as object), MarketHistories: [...(input.payload as { MarketHistories: unknown[] }).MarketHistories, (input.payload as { MarketHistories: unknown[] }).MarketHistories[0]] };
   assert.equal(normalizeCollectorHistory({ server: "East/Asia", receivedAt: input.receivedAt, payload: duplicatePayload }).rows.length, normalized.rows.length);
-  const activity = aggregateDailyActivity(normalized.rows as MarketActivityRow[]);
+  const activity = aggregateDailyActivity(normalized.rows as MarketActivityRow[], new Date("2026-11-01T00:00:00.000Z"));
   assert.equal(activity.length, 1);
   assert.equal(activity[0]?.coverageDays, 3);
   assert.equal(activity[0]?.averageDailyUnits, normalized.rows.reduce((sum, row) => sum + row.itemAmount, 0) / 3);
